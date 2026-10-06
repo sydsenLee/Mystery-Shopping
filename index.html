@@ -235,6 +235,9 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
   ];
 
   var KEY = 'mystery-shopping-simple-v1';
+  // The Google Sheet that the delegates' Google Form sends its answers to.
+  var DEFAULT_SHEET = 'https://docs.google.com/spreadsheets/d/17x_FUHYa_4dckygfQQ4yJscyIzWs2Y6VTtR6KhQ13xg/edit?usp=sharing';
+  try { if (!localStorage.getItem(KEY + '-sheet')) localStorage.setItem(KEY + '-sheet', DEFAULT_SHEET); } catch (e) {}
   var state = load();
   var armedDelete = null;
   var embedded = !!(window.claude && window.claude.use);
@@ -639,7 +642,10 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     try { link = localStorage.getItem(KEY + '-sheet') || ''; } catch (e) {}
     if (!link) return;
     try {
-      importAnswers(await fetchSheet(link), false, true);
+      var text = await fetchSheet(link);
+      // First time: import normally so any question mismatch is shown and can be fixed.
+      if (!state.dealers.some(function (d) { return d.importKey; })) { $('importBox').hidden = false; importAnswers(text); }
+      else importAnswers(text, false, true);
       setLiveStatus('Live: checking the Google Sheet every minute. Last checked ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.');
     } catch (e) {
       setLiveStatus('Live: could not reach the Google Sheet at ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '. Will try again.');
@@ -660,7 +666,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     try { hasLink = !!localStorage.getItem(KEY + '-sheet'); } catch (e) {}
     if (hasLink) startLive($('liveChk').checked);
   });
-  try { if (localStorage.getItem(KEY + '-sheet') && localStorage.getItem(KEY + '-live') === '1') startLive(true); } catch (e) {}
+  try { if (localStorage.getItem(KEY + '-sheet') && localStorage.getItem(KEY + '-live') !== '') startLive(true); } catch (e) {}
 
   $('useFormQs').addEventListener('click', function () { if (pendingImport) importAnswers(pendingImport, true); });
   $('importMatched').addEventListener('click', function () {
