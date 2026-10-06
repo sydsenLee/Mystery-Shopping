@@ -10,7 +10,7 @@ One simple page. No installation.
 **How the percentage works:** Yes answers ÷ questions answered. Questions left blank are not counted.
 
 * Your work saves automatically in the browser on that computer.
-* **Download results** saves a file that opens in Excel.
+* **Export** saves the whole results table as an Excel file (.xlsx), with the same green and red Yes/No cells and percentages.
 * **Edit questions** lets you change the question list for another OEM (one question per line, start a line with `#` for a section heading).
 * Adding the same dealership twice creates "(visit 2)".
 
@@ -18,6 +18,6 @@ One simple page. No installation.
 
 1. Go to https://script.google.com, click **New project**, paste in `google-form-setup.gs`, click **Save**, then **Run**.
 2. Allow the permissions Google asks for. The **Execution log** shows the form link for delegates and the Google Sheet where answers arrive.
-3. To load answers into the app: in Google Forms open **Responses**, click the **⋮** menu and choose **Download responses (.csv)**. In the app click **Import from Google Form**, browse for that file (the .zip is fine) and click **Import answers**. Import again any time; answers already loaded are skipped.
+3. To load answers into the app: in Google Forms open **Responses**, click the **⋮** menu and choose **Download responses (.csv)**. In the app click **Import csv file**, browse for that file (the .zip is fine) and click **Import answers**. Import again any time; answers already loaded are skipped.
 
 The earlier, larger version of the app is still in this branch's git history (commit `Build Mystery Shopping assessment...`).

@@ -152,8 +152,8 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
 
   <section class="card">
     <div class="tools">
-      <button class="btn" id="csvBtn" type="button">Download results (opens in Excel)</button>
-      <button class="btn" id="importBtn" type="button">Import from Google Form</button>
+      <button class="btn btn-main" id="csvBtn" type="button">Export</button>
+      <button class="btn" id="importBtn" type="button">Import csv file</button>
       <button class="btn" id="editBtn" type="button">Edit questions</button>
       <button class="btn" id="clearBtn" type="button">Clear all dealerships</button>
     </div>
@@ -434,28 +434,154 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     state.questions = qs; save(); render(); $('editBox').hidden = true; toast('Questions saved');
   });
 
-  $('csvBtn').addEventListener('click', function () {
-    if (!state.dealers.length) { toast('Add a dealership first'); return; }
-    var ds = state.dealers, rows = [['Question'].concat(ds.map(function (d) { return d.name; }), ['Yes %'])], n = 0;
+  // ---------- Export: a real Excel file (.xlsx) laid out like the results table ----------
+  function xmlEsc(v) { return String(v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ''); }
+  function colName(i) { var s = ''; i++; while (i) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+
+  var CRC_TABLE = (function () { var t = []; for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(u8) { var c = 0xffffffff; for (var i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+
+  // Minimal zip writer (files stored without compression), which is all an .xlsx needs.
+  function makeZip(files) {
+    var enc = new TextEncoder(), parts = [], central = [], offset = 0;
+    files.forEach(function (f) {
+      var name = enc.encode(f.name), data = enc.encode(f.data), crc = crc32(data);
+      var h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(8, 0, true);
+      h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true);
+      parts.push(new Uint8Array(h.buffer), name, data);
+      var c = new DataView(new ArrayBuffer(46));
+      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true);
+      c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true);
+      c.setUint32(42, offset, true);
+      central.push(new Uint8Array(c.buffer), name);
+      offset += 30 + name.length + data.length;
+    });
+    var size = central.reduce(function (n, x) { return n + x.length; }, 0);
+    var e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+    e.setUint32(12, size, true); e.setUint32(16, offset, true);
+    return new Blob(parts.concat(central, [new Uint8Array(e.buffer)]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+
+  // Cell styles (index into cellXfs below).
+  var X = { title: 1, head: 2, dealerHead: 3, yes: 4, no: 5, blank: 6, q: 7, sec: 8, pct: { good: 9, fair: 10, poor: 11, '': 12 }, secPct: { good: 13, fair: 14, poor: 15, '': 16 }, note: 17 };
+  var STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<fonts count="8">' +
+      '<font><sz val="11"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="11"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FF17804A"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FFA66800"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FFC42B34"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="16"/><name val="Calibri"/></font>' +
+      '<font><i/><sz val="10"/><color rgb="FF5D6A7A"/><name val="Calibri"/></font>' +
+    '</fonts>' +
+    '<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FF17804A"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFC42B34"/></patternFill></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FFE9EDF2"/></patternFill></fill></fills>' +
+    '<borders count="2"><border/><border><left style="thin"><color rgb="FFD8DEE6"/></left><right style="thin"><color rgb="FFD8DEE6"/></right><top style="thin"><color rgb="FFD8DEE6"/></top><bottom style="thin"><color rgb="FFD8DEE6"/></bottom></border></borders>' +
+    '<cellStyleXfs count="1"><xf/></cellStyleXfs>' +
+    '<cellXfs count="18">' +
+      '<xf/>' +
+      '<xf fontId="6" applyFont="1"/>' +
+      '<xf fontId="1" borderId="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="bottom" wrapText="1"/></xf>' +
+      '<xf fontId="1" borderId="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="bottom" textRotation="90"/></xf>' +
+      '<xf fontId="2" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf fontId="2" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf borderId="1" applyBorder="1"/>' +
+      '<xf borderId="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>' +
+      '<xf fontId="1" fillId="4" borderId="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>' +
+      '<xf numFmtId="9" fontId="3" borderId="1" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="9" fontId="4" borderId="1" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="9" fontId="5" borderId="1" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf borderId="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="9" fontId="3" fillId="4" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="9" fontId="4" fillId="4" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="9" fontId="5" fillId="4" borderId="1" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf fillId="4" borderId="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf fontId="7" applyFont="1"/>' +
+    '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+
+  function buildXlsx() {
+    var ds = state.dealers, qs = allQs(), rows = [];
+    // Each cell: { v: text or number, s: style }. Percentages are stored as real numbers (0.75 shown as 75%).
+    function pctCell(p, inSection) { var b = band(p); return p === null ? { v: '-', s: (inSection ? X.secPct : X.pct)[''] } : { v: p / 100, s: (inSection ? X.secPct : X.pct)[b] }; }
+    var overall = { yes: 0, answered: 0 };
+    ds.forEach(function (d) { var sc = scoreOf(d.answers, qs); overall.yes += sc.yes; overall.answered += sc.answered; });
+    var op = overall.answered ? overall.yes / overall.answered * 100 : null;
+
+    rows.push([{ v: 'Mystery Shopping Blood Chart', s: X.title }]);
+    rows.push([{ v: 'Exported ' + new Date().toLocaleString() + '. Percentage = Yes answers ÷ questions answered (blank answers are not counted).', s: X.note }]);
+    rows.push([{ v: 'Overall score', s: X.sec }, pctCell(op, true)]);
+    rows.push([]);
+    rows.push([{ v: 'Question', s: X.head }].concat(ds.map(function (d) { return { v: d.name, s: X.dealerHead }; }), [{ v: 'Yes %', s: X.head }]));
+    var n = 0;
     sections().forEach(function (sec) {
-      if (sec.title) rows.push([sec.title.toUpperCase()].concat(ds.map(function (d) { return pctText(scoreOf(d.answers, sec.qs).pct); }), ['']));
+      if (sec.title) {
+        var pooled = { yes: 0, answered: 0 };
+        ds.forEach(function (d) { var sc = scoreOf(d.answers, sec.qs); pooled.yes += sc.yes; pooled.answered += sc.answered; });
+        rows.push([{ v: sec.title, s: X.sec }].concat(ds.map(function (d) { return pctCell(scoreOf(d.answers, sec.qs).pct, true); }), [pctCell(pooled.answered ? pooled.yes / pooled.answered * 100 : null, true)]));
+      }
       sec.qs.forEach(function (q) {
         n++;
-        rows.push([n + '. ' + q.text].concat(ds.map(function (d) { var a = d.answers[q.id]; return a === 'Y' ? 'Yes' : a === 'N' ? 'No' : ''; }), [pctText(questionScore(q).pct)]));
+        rows.push([{ v: n + '. ' + q.text, s: X.q }].concat(ds.map(function (d) {
+          var a = d.answers[q.id];
+          return a === 'Y' ? { v: 'Yes', s: X.yes } : a === 'N' ? { v: 'No', s: X.no } : { v: '', s: X.blank };
+        }), [pctCell(questionScore(q).pct)]));
       });
     });
-    rows.push(['DEALERSHIP SCORE'].concat(ds.map(function (d) { return pctText(scoreOf(d.answers, allQs()).pct); }), ['']));
+    rows.push([{ v: 'Dealership score', s: X.sec }].concat(ds.map(function (d) { return pctCell(scoreOf(d.answers, qs).pct, true); }), [pctCell(op, true)]));
+
+    var sheetRows = rows.map(function (r, ri) {
+      var cells = r.map(function (c, ci) {
+        var ref = colName(ci) + (ri + 1);
+        if (c.v === '' || c.v === undefined) return '<c r="' + ref + '" s="' + c.s + '"/>';
+        if (typeof c.v === 'number') return '<c r="' + ref + '" s="' + c.s + '"><v>' + c.v + '</v></c>';
+        return '<c r="' + ref + '" s="' + c.s + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(c.v) + '</t></is></c>';
+      }).join('');
+      var ht = ri === 4 ? ' ht="150" customHeight="1"' : '';
+      return '<row r="' + (ri + 1) + '"' + ht + '>' + cells + '</row>';
+    }).join('');
+    var cols = '<cols><col min="1" max="1" width="60" customWidth="1"/>' +
+      (ds.length ? '<col min="2" max="' + (ds.length + 1) + '" width="7" customWidth="1"/>' : '') +
+      '<col min="' + (ds.length + 2) + '" max="' + (ds.length + 2) + '" width="10" customWidth="1"/></cols>';
+    var sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="5" topLeftCell="B6" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>' +
+      cols + '<sheetData>' + sheetRows + '</sheetData>' +
+      '<pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>';
+    return makeZip([
+      { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+      { name: '_rels/.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+      { name: 'xl/workbook.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Blood Chart" sheetId="1" r:id="rId1"/></sheets></workbook>' },
+      { name: 'xl/_rels/workbook.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+      { name: 'xl/styles.xml', data: STYLES },
+      { name: 'xl/worksheets/sheet1.xml', data: sheet }
+    ]);
+  }
+
+  $('csvBtn').addEventListener('click', async function () {
+    if (!state.dealers.length) { toast('Add a dealership first'); return; }
+    var blob = buildXlsx();
+    var name = 'Mystery_Shopping_Blood_Chart_' + new Date().toISOString().slice(0, 10) + '.xlsx';
     if (embedded) {
-      // Hosted pages cannot download files, so copy the table for pasting into Excel instead.
-      var tsv = rows.map(function (r) { return r.join('\t'); }).join('\n');
-      navigator.clipboard.writeText(tsv).then(function () { toast('Copied. Open Excel and press Paste.'); }, function () { toast('Copy did not work in this browser'); });
+      var dl = null;
+      try { dl = await window.claude.use('downloads'); } catch (e) {}
+      if (dl) {
+        try { await dl.save({ filename: name, data: blob }); } catch (e) { if (e && e.code !== 'declined') toast('The file could not be saved.'); }
+        return;
+      }
+      toast('Saving files is not available on this online page. Use the downloaded copy of the app to export.', 6000);
       return;
     }
-    var csv = '﻿' + rows.map(function (r) { return r.map(function (v) { v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }).join('\r\n');
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'Mystery_Shopping_Results.csv';
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
   });
 
   // ---------- import from Google Form answers (CSV file or pasted cells) ----------
@@ -628,7 +754,6 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     }
   });
 
-  if (embedded) $('csvBtn').textContent = 'Copy results (paste into Excel)';
   render();
 })();
 </script>
