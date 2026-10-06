@@ -1,15 +1,438 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Mystery Shop Manager</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mystery Shopping Blood Chart</title>
+<style>
+/* Layout: one column. Add dealership, answer questions, results table underneath. */
+:root {
+  --bg: #f2f4f7;
+  --card: #ffffff;
+  --line: #d8dee6;
+  --ink: #142030;
+  --muted: #5d6a7a;
+  --accent: #1c58b2;
+  --accent-soft: #e3ecf9;
+  --yes: #17804a;
+  --yes-soft: #d8f0e1;
+  --no: #c42b34;
+  --no-soft: #fadfe1;
+  --amber: #a66800;
+  --amber-soft: #fcefd2;
+  --on-color: #ffffff;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e141b; --card: #161e28; --line: #2c3846; --ink: #e5ebf1; --muted: #98a6b6;
+    --accent: #6497e6; --accent-soft: #1c2c46; --yes: #3fb873; --yes-soft: #17351f;
+    --no: #e95a62; --no-soft: #401a1e; --amber: #e6aa46; --amber-soft: #3a2c12; --on-color: #0a1118;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e141b; --card: #161e28; --line: #2c3846; --ink: #e5ebf1; --muted: #98a6b6;
+  --accent: #6497e6; --accent-soft: #1c2c46; --yes: #3fb873; --yes-soft: #17351f;
+  --no: #e95a62; --no-soft: #401a1e; --amber: #e6aa46; --amber-soft: #3a2c12; --on-color: #0a1118;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+h1 { margin: 0 0 4px; font-size: 26px; }
+h2 { margin: 0 0 12px; font-size: 18px; }
+.sub { color: var(--muted); margin: 0 0 20px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 18px; }
+.num { font-variant-numeric: tabular-nums; }
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Add dealership */
+.add { display: flex; gap: 10px; flex-wrap: wrap; }
+.add input { flex: 1 1 260px; min-width: 0; padding: 12px 14px; font: inherit; font-size: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+.btn { padding: 11px 18px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-weight: 600; }
+.btn:hover { background: var(--bg); }
+.btn-main { background: var(--accent); border-color: var(--accent); color: var(--on-color); }
+.btn-main:hover { background: var(--accent); opacity: .9; }
+.dealers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.chip { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--ink); }
+.chip.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.chip .pct { font-size: 13px; font-weight: 700; }
+.chip .x { border: 0; background: none; color: var(--muted); padding: 0 4px; font-size: 16px; line-height: 1; }
+.empty { color: var(--muted); margin: 12px 0 0; }
+
+/* Questions */
+.head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.score { font-size: 15px; color: var(--muted); }
+.score b { font-size: 22px; }
+.section { margin: 18px 0 4px; padding: 8px 12px; background: var(--bg); border-radius: 6px; font-weight: 700; display: flex; justify-content: space-between; }
+.q { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.q:last-child { border-bottom: 0; }
+.q .n { width: 28px; color: var(--muted); font-weight: 600; flex: none; text-align: right; }
+.q .t { flex: 1; min-width: 0; }
+.yn { display: flex; gap: 8px; flex: none; }
+.yn button { width: 78px; height: 48px; border-radius: 8px; border: 2px solid var(--line); background: var(--card); font-weight: 800; font-size: 16px; }
+.yn .y { color: var(--yes); }
+.yn .no { color: var(--no); }
+.yn .y.sel { background: var(--yes); border-color: var(--yes); color: var(--on-color); }
+.yn .no.sel { background: var(--no); border-color: var(--no); color: var(--on-color); }
+@media (max-width: 560px) {
+  .q { flex-wrap: wrap; }
+  .yn { width: 100%; padding-left: 40px; }
+  .yn button { flex: 1; }
+}
+
+/* Results table */
+.tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: separate; border-spacing: 0; font-size: 13px; min-width: 100%; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--card); }
+thead th { position: sticky; top: 0; z-index: 2; font-weight: 700; vertical-align: bottom; }
+.qcol { position: sticky; left: 0; z-index: 1; text-align: left; min-width: 240px; max-width: 320px; border-right: 1px solid var(--line); }
+thead .qcol { z-index: 3; }
+.dcol { text-align: center; min-width: 46px; }
+.dname { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; max-height: 140px; overflow: hidden; margin: 0 auto; }
+.cell { display: inline-block; width: 30px; height: 24px; line-height: 24px; border-radius: 4px; font-weight: 700; }
+.cell.Y { background: var(--yes); color: var(--on-color); }
+.cell.N { background: var(--no); color: var(--on-color); }
+.pcol { text-align: right; white-space: nowrap; border-left: 1px solid var(--line); font-weight: 700; }
+tr.sec th, tr.sec td { background: var(--bg); font-weight: 700; }
+tr.total th, tr.total td { font-weight: 800; border-top: 2px solid var(--line); }
+.good { color: var(--yes); }
+.fair { color: var(--amber); }
+.poor { color: var(--no); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 5px; font-weight: 700; }
+.badge.good { background: var(--yes-soft); }
+.badge.fair { background: var(--amber-soft); }
+.badge.poor { background: var(--no-soft); }
+.note { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+
+.tools { display: flex; flex-wrap: wrap; gap: 10px; }
+textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-monospace, Consolas, monospace; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+[hidden] { display: none !important; }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Mystery Shopping Blood Chart</h1>
+  <p class="sub">Type a dealership name, tap Yes or No for each question. Scores calculate by themselves and save in this browser.</p>
+
+  <section class="card">
+    <h2>1. Add a dealership</h2>
+    <form class="add" id="addForm">
+      <input id="dealerName" placeholder="e.g. Suzuki Menlyn" autocomplete="off" aria-label="Dealership name">
+      <button class="btn btn-main" type="submit">Add dealership</button>
+    </form>
+    <div class="dealers" id="dealers"></div>
+  </section>
+
+  <section class="card" id="answerCard" hidden>
+    <div class="head">
+      <h2 id="answerTitle">2. Answer the questions</h2>
+      <div class="score" id="dealerScore"></div>
+    </div>
+    <div id="questions"></div>
+    <div class="tools" style="margin-top:16px">
+      <button class="btn btn-main" id="nextBtn" type="button">Next dealership</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="head">
+      <h2>3. Results</h2>
+      <div class="score" id="overall"></div>
+    </div>
+    <div id="results"></div>
+    <p class="note">Percentage = Yes answers ÷ questions answered. Questions left blank are not counted.</p>
+  </section>
+
+  <section class="card">
+    <div class="tools">
+      <button class="btn" id="csvBtn" type="button">Download results (opens in Excel)</button>
+      <button class="btn" id="editBtn" type="button">Edit questions</button>
+      <button class="btn" id="clearBtn" type="button">Clear all dealerships</button>
+    </div>
+    <div id="editBox" hidden style="margin-top:14px">
+      <p class="note" style="margin-top:0">One question per line. Start a line with # to make it a section heading.</p>
+      <textarea id="qText" aria-label="Questions"></textarea>
+      <div class="tools" style="margin-top:10px">
+        <button class="btn btn-main" id="saveQ" type="button">Save questions</button>
+        <button class="btn" id="cancelQ" type="button">Cancel</button>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  var DEFAULT_QUESTIONS = [
+    '# First Moment of Truth',
+    'Was there point of sale material on display?',
+    'Was the showroom clean and tidy?',
+    'Were you acknowledged within 30 seconds?',
+    'Were you served within 3 minutes?',
+    'Did the salesperson wear a name badge?',
+    'Did the salesperson stand up and greet you?',
+    'Did the salesperson introduce themselves?',
+    'Did they offer assistance / determine the reason for your visit?',
+    'Did they use your name during discussions?',
+    'Did they provide you with a business card?',
+    'Did they offer refreshments?',
+    'Did they provide correct information timeously?',
+    'Did they refrain from taking calls?',
+    'Did they record your name?',
+    'Did they record your contact number?',
+    'Did they record your e-mail address?',
+    'Did they avoid opening with "Can I help you?"',
+    '# Second Moment of Truth',
+    'Did the salesperson qualify your needs?',
+    'Did they ask what you currently drive?',
+    'Did they ask why you bought your current vehicle?',
+    'Did they ask why you are looking to change?',
+    'Did they establish your budget?',
+    'Did they ask questions to determine your customer profile?',
+    'Did they establish your motoring requirements?',
+    'Did they explain the relevant benefits (to match your profile)?',
+    'Did they perform a walk-around?',
+    'Did they offer a test drive?',
+    'Did they show pride in their product?',
+    'Did they offer alternate models?',
+    'Did they introduce you to accessories?',
+    'Did they offer to appraise your trade-in?',
+    'Did they offer to provide a written quote?'
+  ];
+
+  var KEY = 'mystery-shopping-simple-v1';
+  var state = load();
+  var armedDelete = null;
+
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  function parseQuestions(lines, old) {
+    // Keep the same id for a question whose wording did not change, so answers are kept.
+    var byText = {};
+    (old || []).forEach(function (q) { byText[q.text + '|' + !!q.heading] = q.id; });
+    return lines.map(function (l) { return l.trim(); }).filter(Boolean).map(function (l) {
+      var heading = l.charAt(0) === '#';
+      var text = heading ? l.replace(/^#+\s*/, '') : l;
+      return { id: byText[text + '|' + heading] || newId(), text: text, heading: heading };
+    });
+  }
+
+  function load() {
+    try {
+      var s = JSON.parse(localStorage.getItem(KEY));
+      if (s && s.questions && s.dealers) return s;
+    } catch (e) {}
+    return { questions: parseQuestions(DEFAULT_QUESTIONS), dealers: [], current: null };
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  // ---------- calculations (blank answers are never counted) ----------
+  function scoreOf(answers, qs) {
+    var yes = 0, answered = 0;
+    qs.forEach(function (q) {
+      var a = answers[q.id];
+      if (a === 'Y' || a === 'N') { answered++; if (a === 'Y') yes++; }
+    });
+    return { yes: yes, answered: answered, pct: answered ? (yes / answered) * 100 : null };
+  }
+  function questionScore(q) {
+    var yes = 0, answered = 0;
+    state.dealers.forEach(function (d) {
+      var a = d.answers[q.id];
+      if (a === 'Y' || a === 'N') { answered++; if (a === 'Y') yes++; }
+    });
+    return { yes: yes, answered: answered, pct: answered ? (yes / answered) * 100 : null };
+  }
+  function sections() {
+    var out = [], cur = null;
+    state.questions.forEach(function (q) {
+      if (q.heading) { cur = { title: q.text, qs: [] }; out.push(cur); }
+      else { if (!cur) { cur = { title: '', qs: [] }; out.push(cur); } cur.qs.push(q); }
+    });
+    return out.filter(function (s) { return s.qs.length; });
+  }
+  function allQs() { return state.questions.filter(function (q) { return !q.heading; }); }
+  function pctText(p) { return p === null ? '-' : Math.round(p) + '%'; }
+  function band(p) { return p === null ? '' : p >= 80 ? 'good' : p >= 60 ? 'fair' : 'poor'; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function current() { return state.dealers.filter(function (d) { return d.id === state.current; })[0] || null; }
+
+  // ---------- rendering ----------
+  var $ = function (id) { return document.getElementById(id); };
+
+  function render() {
+    renderDealers();
+    renderQuestions();
+    renderResults();
+  }
+
+  function renderDealers() {
+    var box = $('dealers');
+    if (!state.dealers.length) { box.innerHTML = '<p class="empty">No dealerships yet. Type a name above and press Add.</p>'; return; }
+    box.innerHTML = state.dealers.map(function (d) {
+      var s = scoreOf(d.answers, allQs());
+      var arm = armedDelete === d.id;
+      return '<span class="chip' + (d.id === state.current ? ' on' : '') + '">' +
+        '<button type="button" data-pick="' + d.id + '" style="border:0;background:none;color:inherit;padding:0;font:inherit">' + esc(d.name) + '</button>' +
+        '<span class="pct num ' + band(s.pct) + '">' + pctText(s.pct) + '</span>' +
+        '<button type="button" class="x" data-del="' + d.id + '" title="Remove" aria-label="Remove ' + esc(d.name) + '">' + (arm ? 'Remove?' : '&times;') + '</button></span>';
+    }).join('');
+  }
+
+  function renderQuestions() {
+    var d = current();
+    $('answerCard').hidden = !d;
+    if (!d) return;
+    var s = scoreOf(d.answers, allQs());
+    $('answerTitle').textContent = '2. Answers for ' + d.name;
+    $('dealerScore').innerHTML = 'Score <b class="num ' + band(s.pct) + '">' + pctText(s.pct) + '</b> &nbsp;·&nbsp; <span class="num">' + s.answered + ' of ' + allQs().length + '</span> answered';
+    var n = 0;
+    $('questions').innerHTML = sections().map(function (sec) {
+      var ss = scoreOf(d.answers, sec.qs);
+      return (sec.title ? '<div class="section"><span>' + esc(sec.title) + '</span><span class="num ' + band(ss.pct) + '">' + pctText(ss.pct) + '</span></div>' : '') +
+        sec.qs.map(function (q) {
+          n++;
+          var a = d.answers[q.id];
+          return '<div class="q"><span class="n num">' + n + '</span><span class="t">' + esc(q.text) + '</span>' +
+            '<span class="yn"><button type="button" class="y' + (a === 'Y' ? ' sel' : '') + '" data-q="' + q.id + '" data-a="Y" aria-pressed="' + (a === 'Y') + '">YES</button>' +
+            '<button type="button" class="no' + (a === 'N' ? ' sel' : '') + '" data-q="' + q.id + '" data-a="N" aria-pressed="' + (a === 'N') + '">NO</button></span></div>';
+        }).join('');
+    }).join('');
+  }
+
+  function renderResults() {
+    var box = $('results');
+    var ds = state.dealers;
+    if (!ds.length) { box.innerHTML = '<p class="empty" style="margin:0">Results appear here once you add a dealership.</p>'; $('overall').innerHTML = ''; return; }
+    var qs = allQs();
+    var overall = { yes: 0, answered: 0 };
+    ds.forEach(function (d) { var s = scoreOf(d.answers, qs); overall.yes += s.yes; overall.answered += s.answered; });
+    var op = overall.answered ? overall.yes / overall.answered * 100 : null;
+    $('overall').innerHTML = 'Overall <span class="badge num ' + band(op) + '">' + pctText(op) + '</span>';
+
+    var h = '<div class="tablebox"><table><thead><tr><th class="qcol">Question</th>' +
+      ds.map(function (d) { return '<th class="dcol"><div class="dname">' + esc(d.name) + '</div></th>'; }).join('') +
+      '<th class="pcol">Yes %</th></tr></thead><tbody>';
+    var n = 0;
+    sections().forEach(function (sec) {
+      if (sec.title) {
+        var pooled = { yes: 0, answered: 0 };
+        ds.forEach(function (d) { var s = scoreOf(d.answers, sec.qs); pooled.yes += s.yes; pooled.answered += s.answered; });
+        var sp = pooled.answered ? pooled.yes / pooled.answered * 100 : null;
+        h += '<tr class="sec"><th class="qcol">' + esc(sec.title) + '</th>' +
+          ds.map(function (d) { var s = scoreOf(d.answers, sec.qs); return '<td class="dcol num ' + band(s.pct) + '">' + pctText(s.pct) + '</td>'; }).join('') +
+          '<td class="pcol num ' + band(sp) + '">' + pctText(sp) + '</td></tr>';
+      }
+      sec.qs.forEach(function (q) {
+        n++;
+        var qsc = questionScore(q);
+        h += '<tr><th class="qcol" style="font-weight:400">' + n + '. ' + esc(q.text) + '</th>' +
+          ds.map(function (d) { var a = d.answers[q.id]; return '<td class="dcol">' + (a ? '<span class="cell ' + a + '">' + (a === 'Y' ? 'Y' : 'N') + '</span>' : '') + '</td>'; }).join('') +
+          '<td class="pcol num ' + band(qsc.pct) + '">' + pctText(qsc.pct) + '</td></tr>';
+      });
+    });
+    h += '<tr class="total"><th class="qcol">Dealership score</th>' +
+      ds.map(function (d) { var s = scoreOf(d.answers, qs); return '<td class="dcol num ' + band(s.pct) + '">' + pctText(s.pct) + '</td>'; }).join('') +
+      '<td class="pcol num ' + band(op) + '">' + pctText(op) + '</td></tr>';
+    box.innerHTML = h + '</tbody></table></div>';
+  }
+
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toast.timer); toast.timer = setTimeout(function () { t.hidden = true; }, 2500);
+  }
+
+  // ---------- actions ----------
+  $('addForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = $('dealerName').value.trim().replace(/\s+/g, ' ');
+    if (!name) { $('dealerName').focus(); return; }
+    var same = state.dealers.filter(function (d) { return d.name.toLowerCase().replace(/ \(visit \d+\)$/, '') === name.toLowerCase(); }).length;
+    var d = { id: newId(), name: same ? name + ' (visit ' + (same + 1) + ')' : name, answers: {} };
+    state.dealers.push(d);
+    state.current = d.id;
+    $('dealerName').value = '';
+    save(); render();
+    $('answerCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('button');
+    if (!t) return;
+    if (t.dataset.pick) { state.current = t.dataset.pick; armedDelete = null; save(); render(); return; }
+    if (t.dataset.del) {
+      if (armedDelete === t.dataset.del) {
+        state.dealers = state.dealers.filter(function (d) { return d.id !== t.dataset.del; });
+        if (state.current === t.dataset.del) state.current = state.dealers.length ? state.dealers[state.dealers.length - 1].id : null;
+        armedDelete = null; save(); render(); toast('Dealership removed');
+      } else { armedDelete = t.dataset.del; renderDealers(); setTimeout(function () { if (armedDelete === t.dataset.del) { armedDelete = null; renderDealers(); } }, 4000); }
+      return;
+    }
+    if (t.dataset.q) {
+      var d = current(); if (!d) return;
+      if (d.answers[t.dataset.q] === t.dataset.a) delete d.answers[t.dataset.q]; // tap again to clear
+      else d.answers[t.dataset.q] = t.dataset.a;
+      save(); render();
+    }
+  });
+
+  $('nextBtn').addEventListener('click', function () {
+    var i = state.dealers.findIndex(function (d) { return d.id === state.current; });
+    if (i < state.dealers.length - 1) { state.current = state.dealers[i + 1].id; save(); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    else { $('dealerName').focus(); window.scrollTo({ top: 0, behavior: 'smooth' }); toast('Type the next dealership name'); }
+  });
+
+  $('clearBtn').addEventListener('click', function () {
+    var b = $('clearBtn');
+    if (b.dataset.armed) {
+      state.dealers = []; state.current = null; save(); render();
+      b.textContent = 'Clear all dealerships'; delete b.dataset.armed; toast('All dealerships cleared');
+    } else {
+      b.dataset.armed = '1'; b.textContent = 'Click again to clear everything';
+      setTimeout(function () { b.textContent = 'Clear all dealerships'; delete b.dataset.armed; }, 4000);
+    }
+  });
+
+  $('editBtn').addEventListener('click', function () {
+    $('qText').value = state.questions.map(function (q) { return (q.heading ? '# ' : '') + q.text; }).join('\n');
+    $('editBox').hidden = false;
+  });
+  $('cancelQ').addEventListener('click', function () { $('editBox').hidden = true; });
+  $('saveQ').addEventListener('click', function () {
+    var qs = parseQuestions($('qText').value.split('\n'), state.questions);
+    if (!qs.some(function (q) { return !q.heading; })) { toast('Add at least one question'); return; }
+    state.questions = qs; save(); render(); $('editBox').hidden = true; toast('Questions saved');
+  });
+
+  $('csvBtn').addEventListener('click', function () {
+    if (!state.dealers.length) { toast('Add a dealership first'); return; }
+    var ds = state.dealers, rows = [['Question'].concat(ds.map(function (d) { return d.name; }), ['Yes %'])], n = 0;
+    sections().forEach(function (sec) {
+      if (sec.title) rows.push([sec.title.toUpperCase()].concat(ds.map(function (d) { return pctText(scoreOf(d.answers, sec.qs).pct); }), ['']));
+      sec.qs.forEach(function (q) {
+        n++;
+        rows.push([n + '. ' + q.text].concat(ds.map(function (d) { var a = d.answers[q.id]; return a === 'Y' ? 'Yes' : a === 'N' ? 'No' : ''; }), [pctText(questionScore(q).pct)]));
+      });
+    });
+    rows.push(['DEALERSHIP SCORE'].concat(ds.map(function (d) { return pctText(scoreOf(d.answers, allQs()).pct); }), ['']));
+    var csv = '﻿' + rows.map(function (r) { return r.map(function (v) { v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }).join('\r\n');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'Mystery_Shopping_Results.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  render();
+})();
+</script>
+</body>
 </html>
