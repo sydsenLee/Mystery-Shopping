@@ -18,6 +18,8 @@ const titleMatch = head.match(/^\s*[\s\S]*?(<title>[^<]*<\/title>)/i);
 const title = titleMatch?.[1] ?? '<title>Mystery Shop Manager</title>';
 head = head.replace(title, '');
 // Mount point first, then fonts and the app script.
-const out = `${title}\n${body}\n${head.trim()}\n`;
+// Some bundled libraries contain a literal U+FFFD inside JavaScript strings. Write it as an
+// escape so the page text has no replacement characters (same meaning to the JS engine).
+const out = `${title}\n${body}\n${head.trim()}\n`.replace(/\uFFFD/g, '\\uFFFD');
 writeFileSync('dist-single/mystery-shop.html', out);
 console.log('dist-single/mystery-shop.html', (out.length / 1024 / 1024).toFixed(2), 'MB');

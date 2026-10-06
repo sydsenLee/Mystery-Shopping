@@ -5,12 +5,18 @@ Delegates' visits are captured with large Yes / No buttons, every answer saves s
 Blood Chart, analytics and reports calculate themselves. It works for any OEM: nothing about Suzuki,
 a dealer network or a particular questionnaire is built in.
 
+**Quickest way to use it:** download `release/Mystery-Shop.html` and double-click it. It opens in your
+browser and works offline. Your data is saved in that browser on that computer, so use
+Settings → Download backup regularly.
+
+**For developers:**
+
 ```
 npm install
 npm run dev          # local development at http://localhost:5173
 npm test             # calculation tests
 npm run build        # static website in dist/
-npm run build:single && node scripts/make-artifact.mjs   # one self-contained HTML page
+npm run build:single  # one self-contained HTML file in dist-single/ (copy it to release/)
 ```
 
 ---
