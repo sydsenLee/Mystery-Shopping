@@ -126,8 +126,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     <p class="note" style="margin:0 0 6px;font-size:14px"><b>If the delegates used Google Forms:</b> click <b>Import csv file</b> and choose the results file you downloaded from Google Forms.</p>
     <p class="note" style="margin:0 0 14px;font-size:14px"><b>If the delegates did not use Google Forms, or you want to add more dealerships by hand:</b> type the dealership name in the box below and click <b>Add dealership</b>.</p>
     <div class="tools">
-      <button class="btn btn-main" id="csvBtn" type="button">Export</button>
-      <button class="btn" id="importBtn" type="button">Import csv file</button>
+      <button class="btn btn-main" id="importBtn" type="button">Import csv file</button>
       <button class="btn" id="editBtn" type="button">Edit questions</button>
       <button class="btn" id="clearBtn" type="button">Clear all dealerships</button>
     </div>
@@ -187,6 +186,9 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     </div>
     <div id="results"></div>
     <p class="note">Percentage = Yes answers ÷ questions answered. Questions left blank are not counted.</p>
+    <div class="tools" style="margin-top:14px">
+      <button class="btn btn-main" id="csvBtn" type="button">Export to Excel</button>
+    </div>
   </section>
 </div>
 <div class="toast" id="toast" hidden></div>
