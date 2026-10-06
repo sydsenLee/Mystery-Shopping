@@ -153,8 +153,18 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
   <section class="card">
     <div class="tools">
       <button class="btn" id="csvBtn" type="button">Download results (opens in Excel)</button>
+      <button class="btn" id="importBtn" type="button">Import from Google Form</button>
       <button class="btn" id="editBtn" type="button">Edit questions</button>
       <button class="btn" id="clearBtn" type="button">Clear all dealerships</button>
+    </div>
+    <div id="importBox" hidden style="margin-top:14px">
+      <p class="note" style="margin-top:0">Open the Google Sheet with the form answers. Either choose <b>File &gt; Download &gt; Comma-separated values (.csv)</b> and pick that file below, or select all cells (Ctrl+A), copy (Ctrl+C) and paste into the box. Each form answer becomes a dealership. Answers already imported are skipped, so you can import again whenever new forms arrive.</p>
+      <input type="file" id="importFile" accept=".csv,text/csv,.tsv,text/plain" aria-label="Choose CSV file">
+      <textarea id="importText" style="min-height:140px;margin-top:10px" placeholder="Or paste the Google Sheet cells here" aria-label="Pasted answers"></textarea>
+      <div class="tools" style="margin-top:10px">
+        <button class="btn btn-main" id="doImport" type="button">Import answers</button>
+        <button class="btn" id="cancelImport" type="button">Cancel</button>
+      </div>
     </div>
     <div id="editBox" hidden style="margin-top:14px">
       <p class="note" style="margin-top:0">One question per line. Start a line with # to make it a section heading.</p>
@@ -436,6 +446,73 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     a.download = 'Mystery_Shopping_Results.csv';
     document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  // ---------- import from Google Form answers (CSV file or pasted cells) ----------
+  function parseTable(text) {
+    text = text.replace(/^﻿/, '');
+    var firstLine = text.split(/\r?\n/)[0] || '';
+    var sep = firstLine.indexOf('\t') >= 0 ? '\t' : ',';
+    var rows = [], row = [], field = '', quoted = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (quoted) {
+        if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+        else if (c === '"') quoted = false;
+        else field += c;
+      } else if (c === '"' && field === '') quoted = true;
+      else if (c === sep) { row.push(field); field = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); rows.push(row); row = []; field = '';
+      } else field += c;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (v) { return v.trim() !== ''; }); });
+  }
+  function norm(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+  function importAnswers(text) {
+    var rows = parseTable(text);
+    if (rows.length < 2) { toast('No answers found. Include the heading row.'); return; }
+    var head = rows[0].map(norm);
+    var dealerCol = head.findIndex(function (h) { return h.indexOf('dealership') >= 0; });
+    if (dealerCol < 0) { toast('Could not find a "Dealership name" column.'); return; }
+    var timeCol = head.indexOf('timestamp');
+    var map = {}, matched = 0;
+    allQs().forEach(function (q) { var i = head.indexOf(norm(q.text)); if (i >= 0) { map[q.id] = i; matched++; } });
+    if (!matched) { toast('None of the question columns match the questions in this app.'); return; }
+    var seen = {};
+    state.dealers.forEach(function (d) { if (d.importKey) seen[d.importKey] = true; });
+    var added = 0, skipped = 0;
+    rows.slice(1).forEach(function (r) {
+      var name = (r[dealerCol] || '').trim().replace(/\s+/g, ' ');
+      if (!name) return;
+      var key = (timeCol >= 0 ? r[timeCol] : '') + '|' + r.join('|');
+      if (seen[key]) { skipped++; return; }
+      var answers = {};
+      Object.keys(map).forEach(function (qid) {
+        var v = norm(r[map[qid]] || '');
+        if (v === 'yes' || v === 'y') answers[qid] = 'Y';
+        else if (v === 'no' || v === 'n') answers[qid] = 'N';
+      });
+      var same = state.dealers.filter(function (d) { return d.name.toLowerCase().replace(/ \(visit \d+\)$/, '') === name.toLowerCase(); }).length;
+      state.dealers.push({ id: newId(), name: same ? name + ' (visit ' + (same + 1) + ')' : name, answers: answers, importKey: key });
+      seen[key] = true; added++;
+    });
+    save(); render();
+    var missing = allQs().length - matched;
+    toast(added + ' dealership' + (added === 1 ? '' : 's') + ' imported' + (skipped ? ', ' + skipped + ' already there' : '') + (missing ? '. ' + missing + ' question(s) had no matching column' : ''));
+    $('importBox').hidden = true; $('importText').value = ''; $('importFile').value = '';
+  }
+
+  $('importBtn').addEventListener('click', function () { $('importBox').hidden = false; $('editBox').hidden = true; });
+  $('cancelImport').addEventListener('click', function () { $('importBox').hidden = true; });
+  $('doImport').addEventListener('click', function () {
+    var f = $('importFile').files[0];
+    if (f) { var rd = new FileReader(); rd.onload = function () { importAnswers(String(rd.result)); }; rd.readAsText(f); }
+    else if ($('importText').value.trim()) importAnswers($('importText').value);
+    else toast('Choose the CSV file or paste the cells first');
   });
 
   if (embedded) $('csvBtn').textContent = 'Copy results (paste into Excel)';

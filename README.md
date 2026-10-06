@@ -14,4 +14,10 @@ One simple page. No installation.
 * **Edit questions** lets you change the question list for another OEM (one question per line, start a line with `#` for a section heading).
 * Adding the same dealership twice creates "(visit 2)".
 
+## Google Form for delegates
+
+1. Go to https://script.google.com, click **New project**, paste in `google-form-setup.gs`, click **Save**, then **Run**.
+2. Allow the permissions Google asks for. The **Execution log** shows the form link for delegates and the Google Sheet where answers arrive.
+3. To load answers into the app: in the Google Sheet choose **File > Download > Comma-separated values**, then in the app click **Import from Google Form** and choose that file (or copy all cells and paste them in). Import again any time; answers already loaded are skipped.
+
 The earlier, larger version of the app is still in this branch's git history (commit `Build Mystery Shopping assessment...`).
