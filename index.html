@@ -210,6 +210,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
   var KEY = 'mystery-shopping-simple-v1';
   var state = load();
   var armedDelete = null;
+  var embedded = !!(window.claude && window.claude.use);
 
   function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
@@ -424,6 +425,12 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
       });
     });
     rows.push(['DEALERSHIP SCORE'].concat(ds.map(function (d) { return pctText(scoreOf(d.answers, allQs()).pct); }), ['']));
+    if (embedded) {
+      // Hosted pages cannot download files, so copy the table for pasting into Excel instead.
+      var tsv = rows.map(function (r) { return r.join('\t'); }).join('\n');
+      navigator.clipboard.writeText(tsv).then(function () { toast('Copied. Open Excel and press Paste.'); }, function () { toast('Copy did not work in this browser'); });
+      return;
+    }
     var csv = '﻿' + rows.map(function (r) { return r.map(function (v) { v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }).join('\r\n');
     var a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -431,6 +438,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     document.body.appendChild(a); a.click(); a.remove();
   });
 
+  if (embedded) $('csvBtn').textContent = 'Copy results (paste into Excel)';
   render();
 })();
 </script>
