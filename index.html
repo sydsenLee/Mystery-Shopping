@@ -158,9 +158,16 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
       <button class="btn" id="clearBtn" type="button">Clear all dealerships</button>
     </div>
     <div id="importBox" hidden style="margin-top:14px">
-      <p class="note" style="margin-top:0">Open the Google Sheet with the form answers. Either choose <b>File &gt; Download &gt; Comma-separated values (.csv)</b> and pick that file below, or select all cells (Ctrl+A), copy (Ctrl+C) and paste into the box. Each form answer becomes a dealership. Answers already imported are skipped, so you can import again whenever new forms arrive.</p>
-      <input type="file" id="importFile" accept=".csv,text/csv,.tsv,text/plain" aria-label="Choose CSV file">
-      <textarea id="importText" style="min-height:140px;margin-top:10px" placeholder="Or paste the Google Sheet cells here" aria-label="Pasted answers"></textarea>
+      <p class="note" style="margin-top:0">Use any one of the three options below. Each form answer becomes a dealership. Answers already imported are skipped, so you can import again whenever new forms arrive.</p>
+      <div id="urlOption">
+        <label class="note" for="importUrl" style="display:block;margin:0 0 6px"><b>Option A: Google Sheet link.</b> In the answers sheet click <b>Share</b>, set General access to <b>Anyone with the link (Viewer)</b>, click <b>Copy link</b> and paste it here.</label>
+        <input id="importUrl" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%;padding:10px 12px;font:inherit;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)">
+      </div>
+      <p class="note" id="urlBlocked" hidden style="margin:0"><b>Option A (Google Sheet link)</b> works in the downloaded version of this page only. Here, use option B or C.</p>
+      <label class="note" for="importFile" style="display:block;margin:14px 0 6px"><b>Option B: File.</b> Choose the file you downloaded from Google Forms (.zip) or Google Sheets (.csv).</label>
+      <input type="file" id="importFile" aria-label="Choose CSV or ZIP file">
+      <label class="note" for="importText" style="display:block;margin:14px 0 6px"><b>Option C: Copy and paste.</b> In the Google Sheet press Ctrl+A, then Ctrl+C, then paste here.</label>
+      <textarea id="importText" style="min-height:120px" placeholder="Paste the Google Sheet cells here" aria-label="Pasted answers"></textarea>
       <div class="tools" style="margin-top:10px">
         <button class="btn btn-main" id="doImport" type="button">Import answers</button>
         <button class="btn" id="cancelImport" type="button">Cancel</button>
@@ -506,13 +513,69 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     $('importBox').hidden = true; $('importText').value = ''; $('importFile').value = '';
   }
 
+  // Google Forms "Download responses" gives a .zip with the .csv inside. Read the first .csv in it.
+  async function csvFromZip(buf) {
+    var v = new DataView(buf), u8 = new Uint8Array(buf);
+    var eocd = -1;
+    for (var i = buf.byteLength - 22; i >= 0; i--) { if (v.getUint32(i, true) === 0x06054b50) { eocd = i; break; } }
+    if (eocd < 0) throw new Error('not a zip');
+    var count = v.getUint16(eocd + 10, true), p = v.getUint32(eocd + 16, true);
+    for (var n = 0; n < count; n++) {
+      var method = v.getUint16(p + 10, true), size = v.getUint32(p + 20, true);
+      var nameLen = v.getUint16(p + 28, true), extraLen = v.getUint16(p + 30, true), commentLen = v.getUint16(p + 32, true);
+      var local = v.getUint32(p + 42, true);
+      var name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nameLen));
+      p += 46 + nameLen + extraLen + commentLen;
+      if (!/\.csv$/i.test(name)) continue;
+      var start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+      var data = u8.subarray(start, start + size);
+      if (method === 0) return new TextDecoder().decode(data);
+      var stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return await new Response(stream).text();
+    }
+    throw new Error('no csv in zip');
+  }
+
+  function sheetCsvUrl(link) {
+    var m = link.match(/docs\.google\.com\/spreadsheets\/d\/e\/([\w-]+)/);
+    if (m) return 'https://docs.google.com/spreadsheets/d/e/' + m[1] + '/pub?output=csv';
+    m = link.match(/docs\.google\.com\/spreadsheets\/d\/([\w-]+)/);
+    if (!m) return null;
+    var gid = (link.match(/[#&?]gid=(\d+)/) || [])[1];
+    return 'https://docs.google.com/spreadsheets/d/' + m[1] + '/export?format=csv' + (gid ? '&gid=' + gid : '');
+  }
+
+  if (embedded) { $('urlOption').hidden = true; $('urlBlocked').hidden = false; }
+  try { $('importUrl').value = localStorage.getItem(KEY + '-sheet') || ''; } catch (e) {}
+
   $('importBtn').addEventListener('click', function () { $('importBox').hidden = false; $('editBox').hidden = true; });
   $('cancelImport').addEventListener('click', function () { $('importBox').hidden = true; });
-  $('doImport').addEventListener('click', function () {
+  $('doImport').addEventListener('click', async function () {
     var f = $('importFile').files[0];
-    if (f) { var rd = new FileReader(); rd.onload = function () { importAnswers(String(rd.result)); }; rd.readAsText(f); }
-    else if ($('importText').value.trim()) importAnswers($('importText').value);
-    else toast('Choose the CSV file or paste the cells first');
+    var link = embedded ? '' : $('importUrl').value.trim();
+    try {
+      if (f) {
+        var buf = await f.arrayBuffer(), b = new Uint8Array(buf);
+        var isZip = b[0] === 0x50 && b[1] === 0x4b;
+        importAnswers(isZip ? await csvFromZip(buf) : new TextDecoder().decode(buf));
+      } else if ($('importText').value.trim()) {
+        importAnswers($('importText').value);
+      } else if (link) {
+        var url = sheetCsvUrl(link);
+        if (!url) { toast('That does not look like a Google Sheet link'); return; }
+        var res;
+        try { res = await fetch(url); } catch (e) { res = null; }
+        var text = res && res.ok ? await res.text() : '';
+        if (!text || /^\s*<!doctype html|^\s*<html/i.test(text)) {
+          toast('Could not read the sheet. Check it is shared as "Anyone with the link", or use option B.');
+          return;
+        }
+        try { localStorage.setItem(KEY + '-sheet', link); } catch (e) {}
+        importAnswers(text);
+      } else toast('Paste a Google Sheet link, choose a file, or paste the cells first');
+    } catch (e) {
+      toast('That file could not be read. Download it again as .csv and try again.');
+    }
   });
 
   if (embedded) $('csvBtn').textContent = 'Copy results (paste into Excel)';
