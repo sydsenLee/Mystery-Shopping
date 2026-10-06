@@ -147,7 +147,6 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
       <div class="score" id="overall"></div>
     </div>
     <div id="results"></div>
-    <p class="note" id="liveStatus" hidden></p>
     <p class="note">Percentage = Yes answers ÷ questions answered. Questions left blank are not counted.</p>
   </section>
 
@@ -159,16 +158,10 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
       <button class="btn" id="clearBtn" type="button">Clear all dealerships</button>
     </div>
     <div id="importBox" hidden style="margin-top:14px">
-      <p class="note" style="margin-top:0">Use any one of the three options below. Each form answer becomes a dealership. Answers already imported are skipped, so you can import again whenever new forms arrive.</p>
-      <div id="urlOption">
-        <label class="note" for="importUrl" style="display:block;margin:0 0 6px"><b>Option A: Google Sheet link.</b> In the answers sheet click <b>Share</b>, set General access to <b>Anyone with the link (Viewer)</b>, click <b>Copy link</b> and paste it here.</label>
-        <input id="importUrl" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%;padding:10px 12px;font:inherit;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)">
-        <label class="note" style="display:flex;gap:8px;align-items:center;margin:8px 0 0"><input type="checkbox" id="liveChk" checked> Keep checking for new answers every minute while this page is open</label>
-      </div>
-      <p class="note" id="urlBlocked" hidden style="margin:0"><b>Option A (Google Sheet link)</b> works in the downloaded version of this page only. Here, use option B or C.</p>
-      <label class="note" for="importFile" style="display:block;margin:14px 0 6px"><b>Option B: File.</b> Choose the file you downloaded from Google Forms (.zip) or Google Sheets (.csv).</label>
+      <p class="note" style="margin-top:0">Use either option below. Each form answer becomes a dealership. Answers already imported are skipped, so you can import again whenever new forms arrive.</p>
+      <label class="note" for="importFile" style="display:block;margin:14px 0 6px"><b>Option 1: Browse for the file.</b> Choose the file you downloaded from Google Forms (.zip) or Google Sheets (.csv).</label>
       <input type="file" id="importFile" aria-label="Choose CSV or ZIP file">
-      <label class="note" for="importText" style="display:block;margin:14px 0 6px"><b>Option C: Copy and paste.</b> In the Google Sheet press Ctrl+A, then Ctrl+C, then paste here.</label>
+      <label class="note" for="importText" style="display:block;margin:14px 0 6px"><b>Option 2: Copy and paste.</b> In the Google Sheet press Ctrl+A, then Ctrl+C, then paste here.</label>
       <textarea id="importText" style="min-height:120px" placeholder="Paste the Google Sheet cells here" aria-label="Pasted answers"></textarea>
       <div id="mismatch" hidden style="margin-top:12px;padding:12px;border:1px solid var(--amber);background:var(--amber-soft);border-radius:8px">
         <div id="mismatchText"></div>
@@ -235,9 +228,6 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
   ];
 
   var KEY = 'mystery-shopping-simple-v1';
-  // The Google Sheet that the delegates' Google Form sends its answers to.
-  var DEFAULT_SHEET = 'https://docs.google.com/spreadsheets/d/17x_FUHYa_4dckygfQQ4yJscyIzWs2Y6VTtR6KhQ13xg/edit?usp=sharing';
-  try { if (!localStorage.getItem(KEY + '-sheet')) localStorage.setItem(KEY + '-sheet', DEFAULT_SHEET); } catch (e) {}
   var state = load();
   var armedDelete = null;
   var embedded = !!(window.claude && window.claude.use);
@@ -612,61 +602,6 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     throw new Error('no csv in zip');
   }
 
-  function sheetCsvUrl(link) {
-    var m = link.match(/docs\.google\.com\/spreadsheets\/d\/e\/([\w-]+)/);
-    if (m) return 'https://docs.google.com/spreadsheets/d/e/' + m[1] + '/pub?output=csv';
-    m = link.match(/docs\.google\.com\/spreadsheets\/d\/([\w-]+)/);
-    if (!m) return null;
-    var gid = (link.match(/[#&?]gid=(\d+)/) || [])[1];
-    return 'https://docs.google.com/spreadsheets/d/' + m[1] + '/export?format=csv' + (gid ? '&gid=' + gid : '');
-  }
-
-  var FORM_LINK_HELP = 'That is the link to the form itself, which only you can open. In the form, open the Responses tab and click "Link to Sheets". Then share that Sheet as "Anyone with the link" and paste the Sheet\'s link here.';
-
-  async function fetchSheet(link) {
-    if (/docs\.google\.com\/forms\//.test(link)) throw new Error(FORM_LINK_HELP);
-    var url = sheetCsvUrl(link);
-    if (!url) throw new Error('That does not look like a Google Sheet link.');
-    var res;
-    try { res = await fetch(url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' }); } catch (e) { res = null; }
-    var text = res && res.ok ? await res.text() : '';
-    if (!text || /^\s*<!doctype html|^\s*<html/i.test(text)) throw new Error('Could not read the sheet. Check it is shared as "Anyone with the link" (Viewer).');
-    return text;
-  }
-
-  // Live updates: while this page is open, check the Google Sheet every minute for new form answers.
-  var liveTimer = null;
-  function setLiveStatus(msg) { $('liveStatus').textContent = msg; $('liveStatus').hidden = !msg; }
-  async function liveCheck() {
-    var link = '';
-    try { link = localStorage.getItem(KEY + '-sheet') || ''; } catch (e) {}
-    if (!link) return;
-    try {
-      var text = await fetchSheet(link);
-      // First time: import normally so any question mismatch is shown and can be fixed.
-      if (!state.dealers.some(function (d) { return d.importKey; })) { $('importBox').hidden = false; importAnswers(text); }
-      else importAnswers(text, false, true);
-      setLiveStatus('Live: checking the Google Sheet every minute. Last checked ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.');
-    } catch (e) {
-      setLiveStatus('Live: could not reach the Google Sheet at ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '. Will try again.');
-    }
-  }
-  function startLive(on) {
-    clearInterval(liveTimer); liveTimer = null;
-    try { localStorage.setItem(KEY + '-live', on ? '1' : ''); } catch (e) {}
-    if (on && !embedded) { liveTimer = setInterval(liveCheck, 60000); liveCheck(); }
-    else setLiveStatus('');
-  }
-
-  if (embedded) { $('urlOption').hidden = true; $('urlBlocked').hidden = false; }
-  try { $('importUrl').value = localStorage.getItem(KEY + '-sheet') || ''; } catch (e) {}
-  try { $('liveChk').checked = localStorage.getItem(KEY + '-live') !== ''; } catch (e) {}
-  $('liveChk').addEventListener('change', function () {
-    var hasLink = false;
-    try { hasLink = !!localStorage.getItem(KEY + '-sheet'); } catch (e) {}
-    if (hasLink) startLive($('liveChk').checked);
-  });
-  try { if (localStorage.getItem(KEY + '-sheet') && localStorage.getItem(KEY + '-live') !== '') startLive(true); } catch (e) {}
 
   $('useFormQs').addEventListener('click', function () { if (pendingImport) importAnswers(pendingImport, true); });
   $('importMatched').addEventListener('click', function () {
@@ -680,7 +615,6 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
   $('cancelImport').addEventListener('click', function () { $('importBox').hidden = true; $('mismatch').hidden = true; pendingImport = null; });
   $('doImport').addEventListener('click', async function () {
     var f = $('importFile').files[0];
-    var link = embedded ? '' : $('importUrl').value.trim();
     try {
       if (f) {
         var buf = await f.arrayBuffer(), b = new Uint8Array(buf);
@@ -688,13 +622,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
         importAnswers(isZip ? await csvFromZip(buf) : new TextDecoder().decode(buf));
       } else if ($('importText').value.trim()) {
         importAnswers($('importText').value);
-      } else if (link) {
-        var text;
-        try { text = await fetchSheet(link); } catch (e) { toast(e.message, 9000); return; }
-        try { localStorage.setItem(KEY + '-sheet', link); } catch (e) {}
-        importAnswers(text);
-        if ($('liveChk').checked) startLive(true);
-      } else toast('Paste a Google Sheet link, choose a file, or paste the cells first');
+      } else toast('Choose the file or paste the cells first');
     } catch (e) {
       toast('That file could not be read. Download it again as .csv and try again.');
     }
