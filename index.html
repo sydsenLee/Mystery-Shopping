@@ -147,6 +147,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
       <div class="score" id="overall"></div>
     </div>
     <div id="results"></div>
+    <p class="note" id="liveStatus" hidden></p>
     <p class="note">Percentage = Yes answers ÷ questions answered. Questions left blank are not counted.</p>
   </section>
 
@@ -162,6 +163,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
       <div id="urlOption">
         <label class="note" for="importUrl" style="display:block;margin:0 0 6px"><b>Option A: Google Sheet link.</b> In the answers sheet click <b>Share</b>, set General access to <b>Anyone with the link (Viewer)</b>, click <b>Copy link</b> and paste it here.</label>
         <input id="importUrl" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%;padding:10px 12px;font:inherit;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)">
+        <label class="note" style="display:flex;gap:8px;align-items:center;margin:8px 0 0"><input type="checkbox" id="liveChk" checked> Keep checking for new answers every minute while this page is open</label>
       </div>
       <p class="note" id="urlBlocked" hidden style="margin:0"><b>Option A (Google Sheet link)</b> works in the downloaded version of this page only. Here, use option B or C.</p>
       <label class="note" for="importFile" style="display:block;margin:14px 0 6px"><b>Option B: File.</b> Choose the file you downloaded from Google Forms (.zip) or Google Sheets (.csv).</label>
@@ -372,9 +374,9 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     box.innerHTML = h + '</tbody></table></div>';
   }
 
-  function toast(msg) {
+  function toast(msg, ms) {
     var t = $('toast'); t.textContent = msg; t.hidden = false;
-    clearTimeout(toast.timer); toast.timer = setTimeout(function () { t.hidden = true; }, 2500);
+    clearTimeout(toast.timer); toast.timer = setTimeout(function () { t.hidden = true; }, ms || 3000);
   }
 
   // ---------- actions ----------
@@ -510,7 +512,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
 
   var pendingImport = null, skipMismatch = false;
 
-  function importAnswers(text, useFileQuestions) {
+  function importAnswers(text, useFileQuestions, quiet) {
     var rows = parseTable(text);
     if (rows.length < 2) { toast('No answers found. Include the heading row.'); return; }
     var head = rows[0];
@@ -548,7 +550,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     var matched = Object.keys(map).length;
     var unmatchedCols = answerCols.filter(function (i) { return !usedCol[i]; });
 
-    if (!useFileQuestions && !skipMismatch && unmatchedCols.length && answerCols.length) {
+    if (!useFileQuestions && !skipMismatch && !quiet && unmatchedCols.length && answerCols.length) {
       pendingImport = text;
       $('mismatch').hidden = false;
       $('mismatchText').innerHTML = '<b>' + matched + ' of ' + answerCols.length + '</b> questions in your file match the questions in this app. These did not match:' +
@@ -556,7 +558,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
         (unmatchedCols.length > 8 ? '<li>and ' + (unmatchedCols.length - 8) + ' more</li>' : '') + '</ul>';
       return;
     }
-    if (!matched) { toast('No Yes/No answer columns were found in this file.'); return; }
+    if (!matched) { if (!quiet) toast('No Yes/No answer columns were found in this file.'); return; }
 
     var seen = {};
     state.dealers.forEach(function (d) { if (d.importKey) seen[d.importKey] = true; });
@@ -578,6 +580,7 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     });
     if (state.dealers.length && !current()) state.current = state.dealers[0].id;
     save(); render();
+    if (quiet) { if (added) toast(added + ' new form answer' + (added === 1 ? '' : 's') + ' added'); return; }
     toast(added + ' dealership' + (added === 1 ? '' : 's') + ' imported' + (skipped ? ', ' + skipped + ' already there' : '') + ' (' + matched + ' questions matched)');
     $('importBox').hidden = true; $('mismatch').hidden = true; pendingImport = null;
     $('importText').value = ''; $('importFile').value = '';
@@ -615,8 +618,49 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
     return 'https://docs.google.com/spreadsheets/d/' + m[1] + '/export?format=csv' + (gid ? '&gid=' + gid : '');
   }
 
+  var FORM_LINK_HELP = 'That is the link to the form itself, which only you can open. In the form, open the Responses tab and click "Link to Sheets". Then share that Sheet as "Anyone with the link" and paste the Sheet\'s link here.';
+
+  async function fetchSheet(link) {
+    if (/docs\.google\.com\/forms\//.test(link)) throw new Error(FORM_LINK_HELP);
+    var url = sheetCsvUrl(link);
+    if (!url) throw new Error('That does not look like a Google Sheet link.');
+    var res;
+    try { res = await fetch(url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' }); } catch (e) { res = null; }
+    var text = res && res.ok ? await res.text() : '';
+    if (!text || /^\s*<!doctype html|^\s*<html/i.test(text)) throw new Error('Could not read the sheet. Check it is shared as "Anyone with the link" (Viewer).');
+    return text;
+  }
+
+  // Live updates: while this page is open, check the Google Sheet every minute for new form answers.
+  var liveTimer = null;
+  function setLiveStatus(msg) { $('liveStatus').textContent = msg; $('liveStatus').hidden = !msg; }
+  async function liveCheck() {
+    var link = '';
+    try { link = localStorage.getItem(KEY + '-sheet') || ''; } catch (e) {}
+    if (!link) return;
+    try {
+      importAnswers(await fetchSheet(link), false, true);
+      setLiveStatus('Live: checking the Google Sheet every minute. Last checked ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.');
+    } catch (e) {
+      setLiveStatus('Live: could not reach the Google Sheet at ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '. Will try again.');
+    }
+  }
+  function startLive(on) {
+    clearInterval(liveTimer); liveTimer = null;
+    try { localStorage.setItem(KEY + '-live', on ? '1' : ''); } catch (e) {}
+    if (on && !embedded) { liveTimer = setInterval(liveCheck, 60000); liveCheck(); }
+    else setLiveStatus('');
+  }
+
   if (embedded) { $('urlOption').hidden = true; $('urlBlocked').hidden = false; }
   try { $('importUrl').value = localStorage.getItem(KEY + '-sheet') || ''; } catch (e) {}
+  try { $('liveChk').checked = localStorage.getItem(KEY + '-live') !== ''; } catch (e) {}
+  $('liveChk').addEventListener('change', function () {
+    var hasLink = false;
+    try { hasLink = !!localStorage.getItem(KEY + '-sheet'); } catch (e) {}
+    if (hasLink) startLive($('liveChk').checked);
+  });
+  try { if (localStorage.getItem(KEY + '-sheet') && localStorage.getItem(KEY + '-live') === '1') startLive(true); } catch (e) {}
 
   $('useFormQs').addEventListener('click', function () { if (pendingImport) importAnswers(pendingImport, true); });
   $('importMatched').addEventListener('click', function () {
@@ -639,17 +683,11 @@ textarea { width: 100%; min-height: 320px; padding: 12px; font: 14px/1.5 ui-mono
       } else if ($('importText').value.trim()) {
         importAnswers($('importText').value);
       } else if (link) {
-        var url = sheetCsvUrl(link);
-        if (!url) { toast('That does not look like a Google Sheet link'); return; }
-        var res;
-        try { res = await fetch(url); } catch (e) { res = null; }
-        var text = res && res.ok ? await res.text() : '';
-        if (!text || /^\s*<!doctype html|^\s*<html/i.test(text)) {
-          toast('Could not read the sheet. Check it is shared as "Anyone with the link", or use option B.');
-          return;
-        }
+        var text;
+        try { text = await fetchSheet(link); } catch (e) { toast(e.message, 9000); return; }
         try { localStorage.setItem(KEY + '-sheet', link); } catch (e) {}
         importAnswers(text);
+        if ($('liveChk').checked) startLive(true);
       } else toast('Paste a Google Sheet link, choose a file, or paste the cells first');
     } catch (e) {
       toast('That file could not be read. Download it again as .csv and try again.');
